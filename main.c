@@ -1,8 +1,8 @@
+#include <libavutil/adler32.h>
 #include <libavcodec/avcodec.h>
-#include <libavformat/rtsp.h>
 #include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
-#include <libavutil/opt.h>
+#include <libavutil/imgutils.h>
+#include <libavformat/rtsp.h>
 
 int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacket *pkt)
 {
@@ -29,13 +29,15 @@ int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacket *pkt)
 int main(int argc, char *argv[]) {
 	AVFormatContext   *pFormatCtx = NULL;
 	int               videoStream;
-	AVCodecContext    *pCodecCtxOrig = NULL;
+	//AVCodecContext    *pCodecCtxOrig = NULL;
+	AVCodecParameters *origin_par = NULL;
 	AVCodecContext    *pCodecCtx = NULL;
 	AVCodec           *pCodec = NULL;
-	AVFrame           *pFrame = NULL;
+	//AVFrame           *pFrame = NULL;
 	AVFrame           *pFrameRGB = NULL;
 	AVPacket          packet;
 	int               numBytes;
+	int               result;
 	uint8_t           *buffer = NULL;
 
 	if(argc < 2) {
@@ -46,54 +48,62 @@ int main(int argc, char *argv[]) {
 
 	avformat_network_init();
 
-	if(avformat_open_input(&pFormatCtx, argv[1], NULL, NULL)!=0)
+	result = avformat_open_input(&pFormatCtx, argv[1], NULL, NULL);
+	if(result < 0)
 		return -1; // Couldn't open URI
 
-	if(avformat_find_stream_info(pFormatCtx, NULL)<0)
+	result = avformat_find_stream_info(pFormatCtx, NULL);
+	if(result < 0)
 		return -1; // Couldn't find stream information
 
-	videoStream=-1;
-
-	int i;
-	for(i=0; i<pFormatCtx->nb_streams; i++)
-		if(pFormatCtx->streams[i]->codecpar->codec_type==AVMEDIA_TYPE_VIDEO) {
-			videoStream=i;
-			break;
-		}
+	videoStream = av_find_best_stream(pFormatCtx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
 	if(videoStream==-1)
 		return -1; // Didn't find a video stream
 
-	printf("video stream: %d\n",videoStream);
+	/*pCodecCtxOrig=pFormatCtx->streams[videoStream]->codec;
+	pCodec=avcodec_find_decoder(pCodecCtxOrig->codec_id);*/
 
-	pCodecCtxOrig=pFormatCtx->streams[videoStream]->codec;
-	pCodec=avcodec_find_decoder(pCodecCtxOrig->codec_id);
+	origin_par = pFormatCtx->streams[videoStream]->codecpar;
+	pCodec = avcodec_find_decoder(origin_par->codec_id);
 	
-	if(pCodec==NULL) {
-		fprintf(stderr, "Unsupported codec!\n");
-		return -1; // Codec not found
-	}
+	if(pCodec==NULL)
+		return -1; // Unsupported codec
 
 	pCodecCtx = avcodec_alloc_context3(pCodec);
+
+	if(pCodecCtx==NULL)
+		return -1; //Can't allocate decoder context
+
+	result = avcodec_parameters_to_context(pCodecCtx, origin_par);
+	if(result)
+		return -1; //Can't copy decoder context
 	
-	if(avcodec_copy_context(pCodecCtx, pCodecCtxOrig) != 0) {
+	/*if(avcodec_copy_context(pCodecCtx, pCodecCtxOrig) != 0) {
 		fprintf(stderr, "Couldn't copy codec context");
 		return -1; // Error copying codec context
-	}
+	}*/
 
-	if(avcodec_open2(pCodecCtx, pCodec, NULL)<0)
-		return -1; // Could not open codec
+	result = avcodec_open2(pCodecCtx, pCodec, NULL);
+	if(result < 0)
+		return -1; // Could not open decoder
 
-	pFrame=av_frame_alloc();
+	//pFrame=av_frame_alloc();
 
 	pFrameRGB=av_frame_alloc();
 	if(pFrameRGB==NULL)
-		return -1;
+		return -1; //Can't allocate frame
 
-	numBytes=avpicture_get_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
-	buffer=(uint8_t *)av_malloc(numBytes*sizeof(uint8_t));
+	/*numBytes=avpicture_get_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
+	buffer=(uint8_t *)av_malloc(numBytes*sizeof(uint8_t));*/
+	numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, 16);
+	buffer = av_malloc(numBytes);
 
-	avpicture_fill((AVPicture *)pFrameRGB, buffer, AV_PIX_FMT_RGB24,
-	pCodecCtx->width, pCodecCtx->height);
+	if(!buffer)
+		return -1; //Can't allocate buffer
+
+	//avpicture_fill((AVPicture *)pFrameRGB, buffer, AV_PIX_FMT_RGB24,
+	//pCodecCtx->width, pCodecCtx->height);
+	av_init_packet(&packet);
 
 	uint32_t last_rtcp_ts = 0;
 	uint64_t last_ntp_time = 0;
@@ -104,7 +114,8 @@ int main(int argc, char *argv[]) {
 		if(packet.stream_index==videoStream) {
 			// Decode video frame
 			int got_frame;
-			decode(pCodecCtx, pFrame, &got_frame, &packet);
+			//decode(pCodecCtx, pFrame, &got_frame, &packet);
+			decode(pCodecCtx, pFrameRGB, &got_frame, &packet);
 
 			if(got_frame){
 				
@@ -132,17 +143,18 @@ int main(int argc, char *argv[]) {
 		}
 
 		av_packet_unref(&packet);
+		av_init_packet(&packet);
 	}
 
-	av_free(buffer);
+	av_packet_unref(&packet);
 	av_frame_free(&pFrameRGB);
 
-	av_frame_free(&pFrame);
+	//av_frame_free(&pFrame);
 
 	avcodec_close(pCodecCtx);
-	avcodec_close(pCodecCtxOrig);
-
+	//avcodec_close(pCodecCtxOrig);
 	avformat_close_input(&pFormatCtx);
-
+	avcodec_free_context(&pCodecCtx);
+	av_freep(buffer);
 	return 0;
 }
