@@ -1,15 +1,9 @@
-FFMPEG_LIBS=    libavdevice                        \
-                libavformat                        \
-                libavfilter                        \
-                libavcodec                         \
-                libswresample                      \
-                libswscale                         \
-                libavutil                          \
+FFMPEG_LIBS=     libavcodec                         \
+                 libavformat                        \
 
 INC=-I$(HOME)/ffmpeg_sources/ffmpeg
 
 TARGET = main
-LIBS = -lm
 CC = gcc
 CFLAGS = -g -Wall $(INC)
 
