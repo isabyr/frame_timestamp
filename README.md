@@ -4,8 +4,13 @@ Extracting absolute timestamp of each frame for RTSP stream(H.264 encoded 25fps)
 # Requirements
 Installed ffmpeg 3.2.2 with default directory layout, $HOME/ffmpeg_sources etc
 
+# Compile
+PKG_CONFIG_PATH=$HOME/ffmpeg_build/lib/pkgconfig/ make
+
 # Upcoming
+```bash
 FFMPEG V3 API migration (v3api branch)
+```
 
 # Used resources
 1. http://www.cs.columbia.edu/~hgs/rtp/faq.html
