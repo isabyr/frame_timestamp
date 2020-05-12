@@ -36,7 +36,7 @@ double ntp_timestamp(AVFormatContext *pFormatCtx, uint32_t *last_rtcp_ts, double
 		*base_time = seconds+useconds;
 	}
 
-	uint32_t d_ts = rtp_demux_context->timestamp-*last_rtcp_ts;
+	int32_t d_ts = rtp_demux_context->timestamp-*last_rtcp_ts;
 	return *base_time+d_ts/90000.0;
 }
 
